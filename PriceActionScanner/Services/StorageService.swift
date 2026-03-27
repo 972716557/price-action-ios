@@ -12,6 +12,9 @@ final class StorageService: ObservableObject {
         static let watchlist = "pa_watchlist"
         static let model = "openrouter_model"
         static let apiKey = "openrouter_api_key"
+        static let scanResults = "pa_scan_results"
+        static let scanTimestamp = "pa_scan_timestamp"
+        static let lastStock = "pa_last_stock"
     }
 
     // MARK: - AI 模型
@@ -89,10 +92,54 @@ final class StorageService: ObservableObject {
         }
     }
 
+    // MARK: - 上次查看的股票
+
+    func getLastStock() -> StockItem? {
+        guard let data = defaults.data(forKey: Keys.lastStock),
+              let stock = try? JSONDecoder().decode(StockItem.self, from: data) else {
+            return nil
+        }
+        return stock
+    }
+
+    func saveLastStock(_ stock: StockItem) {
+        if let data = try? JSONEncoder().encode(stock) {
+            defaults.set(data, forKey: Keys.lastStock)
+        }
+    }
+
+    // MARK: - 扫描结果
+
+    func getScanResults() -> [ScanResult] {
+        guard let data = defaults.data(forKey: Keys.scanResults),
+              let results = try? JSONDecoder().decode([ScanResult].self, from: data) else {
+            return []
+        }
+        return results
+    }
+
+    func saveScanResults(_ results: [ScanResult]) {
+        if let data = try? JSONEncoder().encode(results) {
+            defaults.set(data, forKey: Keys.scanResults)
+            defaults.set(Date().timeIntervalSince1970 * 1000, forKey: Keys.scanTimestamp)
+        }
+    }
+
+    func getScanTimestamp() -> Date? {
+        let ts = defaults.double(forKey: Keys.scanTimestamp)
+        guard ts > 0 else { return nil }
+        return Date(timeIntervalSince1970: ts / 1000)
+    }
+
+    func clearScanResults() {
+        defaults.removeObject(forKey: Keys.scanResults)
+        defaults.removeObject(forKey: Keys.scanTimestamp)
+    }
+
     // MARK: - Init
 
     private init() {
         self.selectedModel = defaults.string(forKey: Keys.model) ?? "anthropic/claude-sonnet-4-6"
-        self.openRouterAPIKey = defaults.string(forKey: Keys.apiKey) ?? ""
+        self.openRouterAPIKey = defaults.string(forKey: Keys.apiKey) ?? "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"
     }
 }

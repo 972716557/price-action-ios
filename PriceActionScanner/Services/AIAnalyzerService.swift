@@ -157,6 +157,8 @@ actor AIAnalyzerService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("https://priceaction-scanner.app", forHTTPHeaderField: "HTTP-Referer")
+        request.setValue("PriceAction Scanner", forHTTPHeaderField: "X-Title")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)

@@ -19,11 +19,7 @@ actor StockAPIService {
         guard let text = String(data: data, encoding: .utf8) else { return [] }
 
         // 解码 Unicode 转义
-        let decoded = text.replacingOccurrences(
-            of: "\\\\u([0-9a-fA-F]{4})",
-            with: "",
-            options: .regularExpression
-        ).unicodeUnescaped
+        let decoded = text.unicodeUnescaped
 
         guard let match = decoded.range(of: #"v_hint="(.+)""#, options: .regularExpression),
               decoded[match] != "v_hint=\"N\"" else {

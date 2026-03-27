@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/yuchen/price-action-scanner/**)"
+    ]
+  }
+}

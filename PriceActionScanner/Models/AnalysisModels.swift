@@ -107,7 +107,7 @@ struct FullAnalysis {
 
 // MARK: - 扫描结果
 
-struct ScanResult: Identifiable {
+struct ScanResult: Identifiable, Codable {
     var id: String { stock.code }
     let stock: StockItem
     let score: Int

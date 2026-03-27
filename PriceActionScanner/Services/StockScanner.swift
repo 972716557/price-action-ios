@@ -149,7 +149,7 @@ actor StockScanner {
                         do {
                             let klines = try await StockAPIService.shared.fetchKlineData(symbol: stock.symbol, count: 60)
                             guard klines.count >= 25 else { return nil }
-                            guard let scoring = self.scoreStock(klines: klines) else { return nil }
+                            guard let scoring = await self.scoreStock(klines: klines) else { return nil }
 
                             let last = klines.last!
                             let prev = klines[klines.count - 2]

@@ -5,13 +5,25 @@ struct CandlestickChartView: View {
     let aiResult: AIAnalysisResult?
 
     @State private var selectedIndex: Int?
-    @State private var dragOffset: CGFloat = 0
+    @State private var scrollOffset: Int = 0       // 从最右侧往左偏移的K线数
+    @State private var dragAccumulator: CGFloat = 0 // 拖拽累积量
 
-    // 显示最近60根K线
-    private var visibleCount: Int { min(60, klines.count) }
-    private var visibleKlines: [KlineData] {
-        Array(klines.suffix(visibleCount))
+    private let maxVisible = 60
+
+    private var visibleWindow: (start: Int, end: Int) {
+        let total = klines.count
+        let end = max(0, total - scrollOffset)
+        let start = max(0, end - maxVisible)
+        return (start, end)
     }
+
+    private var visibleKlines: [KlineData] {
+        let w = visibleWindow
+        guard w.start < w.end else { return [] }
+        return Array(klines[w.start..<w.end])
+    }
+
+    private var visibleCount: Int { visibleKlines.count }
 
     private var priceRange: (min: Double, max: Double) {
         let highs = visibleKlines.map(\.high)
@@ -21,60 +33,169 @@ struct CandlestickChartView: View {
         return (minPrice, maxPrice)
     }
 
+    // 计算MA（基于全量数据，取可见窗口段）
+    private func calcMA(_ period: Int) -> [Double?] {
+        let w = visibleWindow
+        var result: [Double?] = []
+        for i in w.start..<w.end {
+            if i < period - 1 {
+                result.append(nil)
+            } else {
+                let slice = klines[(i - period + 1)...i]
+                let avg = slice.map(\.close).reduce(0, +) / Double(period)
+                result.append(avg)
+            }
+        }
+        return result
+    }
+
     var body: some View {
         GeometryReader { geo in
-            let width = geo.size.width - 50 // 右侧价格轴留空
-            let height = geo.size.height - 30 // 底部日期留空
-            let candleWidth = width / CGFloat(visibleCount)
+            let rightPadding: CGFloat = 50
+            let bottomPadding: CGFloat = 30
+            let volumeHeight: CGFloat = 40
+            let chartHeight = geo.size.height - bottomPadding - volumeHeight - 4
+            let width = geo.size.width - rightPadding
+            let candleWidth = visibleCount > 0 ? width / CGFloat(visibleCount) : 1
             let bodyWidth = max(1, candleWidth * 0.7)
             let range = priceRange
 
             ZStack(alignment: .topLeading) {
                 // 背景网格
-                gridLines(height: height, width: width, range: range)
+                gridLines(height: chartHeight, width: width, range: range)
+
+                // MA 均线
+                maLines(width: width, height: chartHeight, range: range, candleWidth: candleWidth)
 
                 // K线
-                ForEach(Array(visibleKlines.enumerated()), id: \.offset) { index, kline in
-                    candleView(
-                        kline: kline,
-                        index: index,
-                        candleWidth: candleWidth,
-                        bodyWidth: bodyWidth,
-                        height: height,
-                        range: range
-                    )
-                }
+                candlesCanvas(
+                    width: width,
+                    height: chartHeight,
+                    candleWidth: candleWidth,
+                    bodyWidth: bodyWidth,
+                    range: range
+                )
+
+                // 成交量
+                volumeBars(width: width, chartHeight: chartHeight, volumeHeight: volumeHeight, candleWidth: candleWidth)
 
                 // AI 标线
                 if let ai = aiResult {
-                    aiLines(ai: ai, width: width, height: height, range: range)
+                    aiLines(ai: ai, width: width, height: chartHeight, range: range)
                 }
 
                 // 价格轴
-                priceAxis(height: height, range: range, x: width)
+                priceAxis(height: chartHeight, range: range, x: width)
 
-                // 选中提示
-                if let idx = selectedIndex, idx < visibleKlines.count {
+                // 选中十字线 + 提示
+                if let idx = selectedIndex, idx >= 0, idx < visibleKlines.count {
+                    crosshair(index: idx, candleWidth: candleWidth, chartHeight: chartHeight, width: width, range: range)
                     selectedTooltip(kline: visibleKlines[idx], geo: geo)
+                }
+
+                // 滚动位置指示
+                if scrollOffset > 0 {
+                    scrollIndicator
                 }
             }
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        let x = value.location.x
-                        let idx = Int(x / candleWidth)
-                        if idx >= 0 && idx < visibleKlines.count {
-                            selectedIndex = idx
-                        }
-                    }
-                    .onEnded { _ in
-                        selectedIndex = nil
-                    }
-            )
+            .gesture(chartGesture(candleWidth: candleWidth))
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 8)
+        .onChange(of: klines.count) { _, _ in
+            scrollOffset = 0
+        }
+    }
+
+    // MARK: - Gesture
+
+    private func chartGesture(candleWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let translation = value.translation.width
+                let startX = value.startLocation.x
+
+                // 判断是横向拖拽（滚动）还是点按（十字线）
+                let isHorizontalDrag = abs(value.translation.width) > 8
+
+                if isHorizontalDrag {
+                    // 横向拖拽 → 滚动K线
+                    selectedIndex = nil
+                    let delta = translation - dragAccumulator
+                    let candlesMoved = Int(delta / candleWidth)
+                    if candlesMoved != 0 {
+                        dragAccumulator += CGFloat(candlesMoved) * candleWidth
+                        let maxOffset = max(0, klines.count - maxVisible)
+                        // 向右拖 → 看更早的数据 → offset 增加
+                        scrollOffset = min(maxOffset, max(0, scrollOffset - candlesMoved))
+                    }
+                } else {
+                    // 点按/微移 → 十字线
+                    let idx = Int(startX / candleWidth)
+                    if idx >= 0 && idx < visibleCount {
+                        selectedIndex = idx
+                    }
+                }
+            }
+            .onEnded { _ in
+                dragAccumulator = 0
+                selectedIndex = nil
+            }
+    }
+
+    // MARK: - Scroll Indicator
+
+    private var scrollIndicator: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 8))
+            Text("左滑返回最新")
+                .font(.system(size: 9))
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(.ultraThinMaterial, in: Capsule())
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        .padding(.trailing, 54)
+        .padding(.bottom, 4)
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.3)) {
+                scrollOffset = 0
+            }
+        }
+    }
+
+    // MARK: - Crosshair
+
+    private func crosshair(index: Int, candleWidth: CGFloat, chartHeight: CGFloat, width: CGFloat, range: (min: Double, max: Double)) -> some View {
+        let x = CGFloat(index) * candleWidth + candleWidth / 2
+        let kline = visibleKlines[index]
+        let priceSpan = range.max - range.min
+        let y = priceSpan > 0 ? CGFloat((range.max - kline.close) / priceSpan) * chartHeight : 0
+
+        return ZStack {
+            // 竖线
+            Path { path in
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: chartHeight))
+            }
+            .stroke(.white.opacity(0.3), style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
+
+            // 横线
+            Path { path in
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: width, y: y))
+            }
+            .stroke(.white.opacity(0.3), style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
+
+            // 价格标签
+            Text(String(format: "%.2f", kline.close))
+                .font(.system(size: 9)).foregroundStyle(.white)
+                .padding(.horizontal, 4).padding(.vertical, 2)
+                .background(.indigo, in: RoundedRectangle(cornerRadius: 3))
+                .position(x: width + 25, y: y)
+        }
     }
 
     // MARK: - Grid
@@ -93,42 +214,96 @@ struct CandlestickChartView: View {
         .frame(height: height)
     }
 
-    // MARK: - Candle
+    // MARK: - MA Lines
 
-    private func candleView(
-        kline: KlineData, index: Int, candleWidth: CGFloat, bodyWidth: CGFloat,
-        height: CGFloat, range: (min: Double, max: Double)
-    ) -> some View {
+    private func maLines(width: CGFloat, height: CGFloat, range: (min: Double, max: Double), candleWidth: CGFloat) -> some View {
         let priceSpan = range.max - range.min
-        guard priceSpan > 0 else { return AnyView(EmptyView()) }
+        let ma5 = calcMA(5)
+        let ma20 = calcMA(20)
 
-        let x = CGFloat(index) * candleWidth + candleWidth / 2
-        let isUp = kline.close >= kline.open
-        let color: Color = isUp ? .red : .green
+        return Canvas { context, _ in
+            guard priceSpan > 0 else { return }
 
-        let highY = CGFloat((range.max - kline.high) / priceSpan) * height
-        let lowY = CGFloat((range.max - kline.low) / priceSpan) * height
-        let openY = CGFloat((range.max - kline.open) / priceSpan) * height
-        let closeY = CGFloat((range.max - kline.close) / priceSpan) * height
+            func drawMA(_ values: [Double?], color: Color) {
+                var path = Path()
+                var started = false
+                for (i, val) in values.enumerated() {
+                    guard let v = val, v >= range.min, v <= range.max else { continue }
+                    let x = CGFloat(i) * candleWidth + candleWidth / 2
+                    let y = CGFloat((range.max - v) / priceSpan) * height
+                    if !started {
+                        path.move(to: CGPoint(x: x, y: y))
+                        started = true
+                    } else {
+                        path.addLine(to: CGPoint(x: x, y: y))
+                    }
+                }
+                context.stroke(path, with: .color(color), lineWidth: 1)
+            }
 
-        let bodyTop = min(openY, closeY)
-        let bodyHeight = max(1, abs(closeY - openY))
+            drawMA(ma5, color: .yellow.opacity(0.8))
+            drawMA(ma20, color: .cyan.opacity(0.8))
+        }
+        .frame(height: height)
+    }
 
-        return AnyView(
-            ZStack {
+    // MARK: - Candles (Canvas)
+
+    private func candlesCanvas(width: CGFloat, height: CGFloat, candleWidth: CGFloat, bodyWidth: CGFloat, range: (min: Double, max: Double)) -> some View {
+        let priceSpan = range.max - range.min
+        let data = visibleKlines
+
+        return Canvas { context, _ in
+            guard priceSpan > 0 else { return }
+            for (index, kline) in data.enumerated() {
+                let x = CGFloat(index) * candleWidth + candleWidth / 2
+                let isUp = kline.close >= kline.open
+                let color: Color = isUp ? .red : .green
+
+                let highY = CGFloat((range.max - kline.high) / priceSpan) * height
+                let lowY = CGFloat((range.max - kline.low) / priceSpan) * height
+                let openY = CGFloat((range.max - kline.open) / priceSpan) * height
+                let closeY = CGFloat((range.max - kline.close) / priceSpan) * height
+                let bodyTop = min(openY, closeY)
+                let bodyH = max(1, abs(closeY - openY))
+
                 // 影线
-                Rectangle()
-                    .fill(color)
-                    .frame(width: 1, height: lowY - highY)
-                    .position(x: x, y: (highY + lowY) / 2)
+                let wickRect = CGRect(x: x - 0.5, y: highY, width: 1, height: lowY - highY)
+                context.fill(Path(wickRect), with: .color(color))
 
                 // 实体
-                Rectangle()
-                    .fill(isUp ? color : color)
-                    .frame(width: bodyWidth, height: bodyHeight)
-                    .position(x: x, y: bodyTop + bodyHeight / 2)
+                let bodyRect = CGRect(x: x - bodyWidth / 2, y: bodyTop, width: bodyWidth, height: bodyH)
+                context.fill(Path(bodyRect), with: .color(color))
             }
-        )
+        }
+        .frame(height: height)
+    }
+
+    // MARK: - Volume Bars
+
+    private func volumeBars(width: CGFloat, chartHeight: CGFloat, volumeHeight: CGFloat, candleWidth: CGFloat) -> some View {
+        let maxVol = visibleKlines.map(\.volume).max() ?? 1
+        let bodyWidth = max(1, candleWidth * 0.7)
+
+        return Canvas { context, _ in
+            guard maxVol > 0 else { return }
+            for (i, kline) in visibleKlines.enumerated() {
+                let x = CGFloat(i) * candleWidth + candleWidth / 2
+                let barHeight = CGFloat(kline.volume / maxVol) * volumeHeight
+                let y = chartHeight + 4 + volumeHeight - barHeight
+                let isUp = kline.close >= kline.open
+                let color: Color = isUp ? .red.opacity(0.4) : .green.opacity(0.4)
+
+                let rect = CGRect(
+                    x: x - bodyWidth / 2,
+                    y: y,
+                    width: bodyWidth,
+                    height: barHeight
+                )
+                context.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color(color))
+            }
+        }
+        .frame(height: chartHeight + 4 + volumeHeight)
     }
 
     // MARK: - AI Lines

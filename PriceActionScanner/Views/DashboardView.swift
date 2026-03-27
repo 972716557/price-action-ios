@@ -27,15 +27,18 @@ struct DashboardView: View {
                 .padding(.horizontal)
                 .padding(.bottom, 20)
             }
+            .refreshable {
+                viewModel.loadKlines()
+            }
             .background(Color(.systemGroupedBackground))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 8) {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(LinearGradient(colors: [.indigo, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        Image("AppLogo")
+                            .resizable()
                             .frame(width: 30, height: 30)
-                            .overlay(Text("P").font(.headline).fontWeight(.bold).foregroundStyle(.white))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         VStack(alignment: .leading, spacing: 0) {
                             Text("PA Scanner").font(.headline)
                             Text("Al Brooks · AI 分析").font(.caption2).foregroundStyle(.secondary)
@@ -274,11 +277,25 @@ struct DashboardView: View {
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
 
+                // MA 图例
+                HStack(spacing: 12) {
+                    HStack(spacing: 4) {
+                        Circle().fill(.yellow.opacity(0.8)).frame(width: 6, height: 6)
+                        Text("MA5").font(.system(size: 9)).foregroundStyle(.secondary)
+                    }
+                    HStack(spacing: 4) {
+                        Circle().fill(.cyan.opacity(0.8)).frame(width: 6, height: 6)
+                        Text("MA20").font(.system(size: 9)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+
                 CandlestickChartView(
                     klines: viewModel.klines,
                     aiResult: viewModel.aiResult
                 )
-                .frame(height: 300)
+                .frame(height: 350)
             }
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
         }

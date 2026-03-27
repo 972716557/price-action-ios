@@ -225,55 +225,73 @@ struct TradeFormView: View {
 
     private func resultView(_ eval: TradeEvaluation) -> some View {
         let isApproved = eval.verdict == .approved
+        let accentColor: Color = isApproved ? .green : .red
         return VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: isApproved ? "checkmark.seal.fill" : "xmark.seal.fill")
-                    .font(.title2)
-                    .foregroundStyle(isApproved ? .green : .red)
-                Text(isApproved ? "交易通过" : "交易否决")
-                    .font(.headline).fontWeight(.bold)
-                    .foregroundStyle(isApproved ? .green : .red)
-            }
-
-            if !eval.reasons.isEmpty {
-                ForEach(eval.reasons, id: \.self) { reason in
-                    Label(reason, systemImage: isApproved ? "checkmark" : "xmark")
-                        .font(.caption)
-                        .foregroundStyle(isApproved ? .primary : .red)
-                }
-            }
-
-            if !eval.warnings.isEmpty {
-                Divider()
-                ForEach(eval.warnings, id: \.self) { warning in
-                    Label(warning, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption).foregroundStyle(.orange)
-                }
-            }
-
+            resultHeader(isApproved: isApproved, accentColor: accentColor)
+            resultReasons(eval: eval, isApproved: isApproved, accentColor: accentColor)
+            resultWarnings(eval: eval)
             if isApproved {
-                HStack(spacing: 16) {
-                    if let stop = eval.stopOrderPrice {
-                        VStack {
-                            Text("入场价").font(.caption2).foregroundStyle(.secondary)
-                            Text(String(format: "%.2f", stop)).font(.subheadline).fontWeight(.bold)
-                        }
-                    }
-                    if let target = eval.targetPrice {
-                        VStack {
-                            Text("目标位").font(.caption2).foregroundStyle(.secondary)
-                            Text(String(format: "%.2f", target))
-                                .font(.subheadline).fontWeight(.bold).foregroundStyle(.green)
-                        }
-                    }
-                }
+                resultPrices(eval: eval)
             }
         }
         .padding()
-        .background((isApproved ? Color.green : Color.red).opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+        .background(accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .strokeBorder((isApproved ? Color.green : Color.red).opacity(0.2), lineWidth: 1)
+                .strokeBorder(accentColor.opacity(0.2), lineWidth: 1)
         )
+    }
+
+    @ViewBuilder
+    private func resultHeader(isApproved: Bool, accentColor: Color) -> some View {
+        HStack {
+            Image(systemName: isApproved ? "checkmark.seal.fill" : "xmark.seal.fill")
+                .font(.title2)
+                .foregroundStyle(accentColor)
+            Text(isApproved ? "交易通过" : "交易否决")
+                .font(.headline).fontWeight(.bold)
+                .foregroundStyle(accentColor)
+        }
+    }
+
+    @ViewBuilder
+    private func resultReasons(eval: TradeEvaluation, isApproved: Bool, accentColor: Color) -> some View {
+        if !eval.reasons.isEmpty {
+            ForEach(eval.reasons, id: \.self) { reason in
+                Label(reason, systemImage: isApproved ? "checkmark" : "xmark")
+                    .font(.caption)
+                    .foregroundStyle(isApproved ? .primary : accentColor)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func resultWarnings(eval: TradeEvaluation) -> some View {
+        if !eval.warnings.isEmpty {
+            Divider()
+            ForEach(eval.warnings, id: \.self) { warning in
+                Label(warning, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func resultPrices(eval: TradeEvaluation) -> some View {
+        HStack(spacing: 16) {
+            if let stop = eval.stopOrderPrice {
+                VStack {
+                    Text("入场价").font(.caption2).foregroundStyle(.secondary)
+                    Text(String(format: "%.2f", stop)).font(.subheadline).fontWeight(.bold)
+                }
+            }
+            if let target = eval.targetPrice {
+                VStack {
+                    Text("目标位").font(.caption2).foregroundStyle(.secondary)
+                    Text(String(format: "%.2f", target))
+                        .font(.subheadline).fontWeight(.bold).foregroundStyle(.green)
+                }
+            }
+        }
     }
 }

@@ -36,7 +36,12 @@ final class DashboardViewModel: ObservableObject {
     // MARK: - Init
 
     init() {
+        if let lastStock = StorageService.shared.getLastStock() {
+            stock = lastStock
+        }
+        scanResults = StorageService.shared.getScanResults()
         startTimers()
+        loadKlines()
     }
 
     deinit {
@@ -50,7 +55,10 @@ final class DashboardViewModel: ObservableObject {
     func loadKlines(for stock: StockItem? = nil, timeframe: KlineTimeframe? = nil, silent: Bool = false) {
         let s = stock ?? self.stock
         let tf = timeframe ?? self.timeframe
-        if let stock = stock { self.stock = stock }
+        if let stock = stock {
+            self.stock = stock
+            StorageService.shared.saveLastStock(stock)
+        }
         if let timeframe = timeframe { self.timeframe = timeframe }
 
         if !silent {
@@ -120,6 +128,7 @@ final class DashboardViewModel: ObservableObject {
                     }
                 }
                 scanResults = results
+                StorageService.shared.saveScanResults(results)
                 scanCooldown = scanCooldownDuration
                 startCooldownTimer()
             } catch {
