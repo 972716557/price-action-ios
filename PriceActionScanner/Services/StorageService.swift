@@ -140,6 +140,6 @@ final class StorageService: ObservableObject {
 
     private init() {
         self.selectedModel = defaults.string(forKey: Keys.model) ?? "anthropic/claude-sonnet-4-6"
-        self.openRouterAPIKey = defaults.string(forKey: Keys.apiKey) ?? "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"
+        self.openRouterAPIKey = defaults.string(forKey: Keys.apiKey) ?? ""
     }
 }
